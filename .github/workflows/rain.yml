@@ -1,0 +1,33 @@
+name: Render Rain
+on:
+  workflow_dispatch:
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg --fix-missing
+          pip install gdown --break-system-packages
+
+      - name: Run render
+        run: python render_rain.py
+
+      - name: Upload video
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rain-video-${{ github.run_number }}
+          path: /tmp/rain/OUT_*.mp4
+          retention-days: 1
+
+      - name: Notify Telegram
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TG_CHAT_ID }}" \
+            -d text="✅ Rain video ready! Go download run #${{ github.run_number }}"
