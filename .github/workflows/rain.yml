@@ -5,22 +5,47 @@ jobs:
   render:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    strategy:
+      matrix:
+        image_index: [0, 1]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
-
       - name: Install deps
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg --fix-missing
           pip install gdown --break-system-packages
-
       - name: Run render
+        env:
+          IMAGE_INDEX: ${{ matrix.image_index }}
         run: python render_rain.py
-
+      - name: Show image used in summary
+        if: always()
+        run: |
+          INDEX=${{ matrix.image_index }}
+          NAME_FILE="/tmp/rain/image_name_${INDEX}.txt"
+          ID_FILE="/tmp/rain/image_id_${INDEX}.txt"
+          FOLDER_ID="1ZZw4iNgd8VOoIpko_qSQZK5nakH2_FEu"
+          if [ -f "$NAME_FILE" ]; then
+            IMG_NAME=$(cat "$NAME_FILE")
+            echo "## 🖼️ Job ${INDEX} — Image Used" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Filename:** \`${IMG_NAME}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ -f "$ID_FILE" ]; then
+              FILE_ID=$(cat "$ID_FILE")
+              echo "![image preview](https://drive.google.com/uc?id=${FILE_ID}&export=view)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "> Delete **\`${IMG_NAME}\`** from your [Google Drive folder](https://drive.google.com/drive/folders/${FOLDER_ID}) after downloading." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Job ${INDEX} — render did not complete" >> $GITHUB_STEP_SUMMARY
+          fi
       - name: Upload video
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: rain-video-${{ github.run_number }}
-          path: /tmp/rain/OUT_*.mp4
+          name: rain-video-${{ matrix.image_index }}-${{ github.run_number }}
+          path: /tmp/rain/OUT_${{ matrix.image_index }}_*.mp4
           retention-days: 1
