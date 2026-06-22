@@ -19,7 +19,7 @@ jobs:
       - name: Run render
         env:
           IMAGE_INDEX: ${{ matrix.image_index }}
-        run: python render_rain.py
+        run: python tenko.py
       - name: Show image used in summary
         if: always()
         run: |
@@ -31,21 +31,4 @@ jobs:
             IMG_NAME=$(cat "$NAME_FILE")
             echo "## 🖼️ Job ${INDEX} — Image Used" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Filename:** \`${IMG_NAME}\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            if [ -f "$ID_FILE" ]; then
-              FILE_ID=$(cat "$ID_FILE")
-              echo "![image preview](https://drive.google.com/uc?id=${FILE_ID}&export=view)" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-            echo "> Delete **\`${IMG_NAME}\`** from your [Google Drive folder](https://drive.google.com/drive/folders/${FOLDER_ID}) after downloading." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## ❌ Job ${INDEX} — render did not complete" >> $GITHUB_STEP_SUMMARY
-          fi
-      - name: Upload video
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rain-video-${{ matrix.image_index }}-${{ github.run_number }}
-          path: /tmp/rain/OUT_${{ matrix.image_index }}_*.mp4
-          retention-days: 1
+            echo "
