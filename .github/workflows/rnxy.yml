@@ -2,13 +2,53 @@ name: Render Rain
 on:
   workflow_dispatch:
 jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      has_work: ${{ steps.discover.outputs.has_work }}
+    steps:
+      - name: Install gdown
+        run: pip install gdown --break-system-packages
+      - name: Discover
+        id: discover
+        run: |
+          python -c "
+          import json, os, sys, time
+          from pathlib import Path
+          import gdown
+          IMAGES_FOLDER = '1ZZw4iNgd8VOoIpko_qSQZK5nakH2_FEu'
+          TMP_DIR = Path('/tmp/discover_rain')
+          TMP_DIR.mkdir(parents=True, exist_ok=True)
+          for attempt in range(3):
+              try:
+                  gdown.download_folder(id=IMAGES_FOLDER, output=str(TMP_DIR), quiet=False)
+                  break
+              except Exception as e:
+                  print(f'Attempt {attempt+1} failed: {e}')
+                  if attempt == 2:
+                      sys.exit(1)
+                  time.sleep(30)
+          all_images = sorted(
+              p for p in TMP_DIR.rglob('*')
+              if p.suffix.lower() in ('.png', '.jpg', '.jpeg')
+          )
+          if not all_images:
+              sys.exit(1)
+          matrix = {'include': [{'image_name': p.name} for p in all_images]}
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'matrix={json.dumps(matrix)}\n')
+              f.write('has_work=true\n')
+          "
   render:
+    needs: discover
+    if: needs.discover.outputs.has_work == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
-      matrix:
-        image_index: [0, 1]
+      max-parallel: 1
       fail-fast: false
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - name: Install deps
@@ -18,20 +58,17 @@ jobs:
           pip install gdown --break-system-packages
       - name: Run render
         env:
-          IMAGE_INDEX: ${{ matrix.image_index }}
+          TARGET_IMAGE_NAME: ${{ matrix.image_name }}
         run: python tenko.py
       - name: Show image used in summary
         if: always()
         run: |
-          INDEX=${{ matrix.image_index }}
-          NAME_FILE="/tmp/rain/image_name_${INDEX}.txt"
-          ID_FILE="/tmp/rain/image_id_${INDEX}.txt"
+          NAME_FILE="/tmp/rain/image_name.txt"
+          ID_FILE="/tmp/rain/image_id.txt"
           FOLDER_ID="1ZZw4iNgd8VOoIpko_qSQZK5nakH2_FEu"
           if [ -f "$NAME_FILE" ]; then
             IMG_NAME=$(cat "$NAME_FILE")
-            echo "## 🖼️ Job ${INDEX} — Image Used" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Filename:** ${IMG_NAME}" >> $GITHUB_STEP_SUMMARY
+            echo "## 🖼️ Image Used: ${IMG_NAME}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             if [ -f "$ID_FILE" ]; then
               FILE_ID=$(cat "$ID_FILE")
@@ -40,12 +77,12 @@ jobs:
             fi
             echo "> Delete **${IMG_NAME}** from your [Google Drive folder](https://drive.google.com/drive/folders/${FOLDER_ID}) after downloading." >> $GITHUB_STEP_SUMMARY
           else
-            echo "## ❌ Job ${INDEX} — render did not complete" >> $GITHUB_STEP_SUMMARY
+            echo "## ❌ Render did not complete for ${{ matrix.image_name }}" >> $GITHUB_STEP_SUMMARY
           fi
       - name: Upload video
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: rain-video-${{ matrix.image_index }}-${{ github.run_number }}
-          path: /tmp/rain/OUT_${{ matrix.image_index }}_*.mp4
+          name: rain-video-${{ github.run_number }}-${{ strategy.job-index }}
+          path: /tmp/rain/OUT_*.mp4
           retention-days: 1
