@@ -20,7 +20,9 @@ SONGS_FOLDER  = "1giqnOS32SeedqFB93Xh872BrfOW-oIVH"
 IMAGES_FOLDER = "1ZZw4iNgd8VOoIpko_qSQZK5nakH2_FEu"
 SUB_FOLDER    = "1mpk5rcZRtVcjrKwrsrSIyfu6TzDWZiTl"
 
-IMAGE_INDEX = int(os.environ["IMAGE_INDEX"])
+TARGET_IMAGE_NAME = os.environ.get("TARGET_IMAGE_NAME")
+if not TARGET_IMAGE_NAME:
+    raise SystemExit("TARGET_IMAGE_NAME env var not set.")
 
 # ── Setup dirs ────────────────────────────────────────────────────────────────
 TMP.mkdir(exist_ok=True)
@@ -43,24 +45,18 @@ songs = list((TMP / "songs").glob("*.mp3")) + list((TMP / "songs").glob("*.wav")
 if not songs:
     raise SystemExit("No songs found.")
 
-images = sorted(
-    list((TMP / "images").glob("*.jpg")) +
-    list((TMP / "images").glob("*.png"))
-)
-if not images:
-    raise SystemExit("No images found.")
+matches = list((TMP / "images").rglob(TARGET_IMAGE_NAME))
+if not matches:
+    raise SystemExit(f"Target image {TARGET_IMAGE_NAME} not found.")
+image_path = matches[0]
 
 subs = list((TMP / "sub").glob("*.mp4")) + list((TMP / "sub").glob("*.mov")) + list((TMP / "sub").glob("*.webm"))
 if not subs:
     raise SystemExit("No subscribe button video found.")
 
-if IMAGE_INDEX >= len(images):
-    raise SystemExit(f"IMAGE_INDEX {IMAGE_INDEX} out of range — only {len(images)} images found.")
-
-image_path  = images[IMAGE_INDEX]
 song_path   = random.choice(songs)
 sub_path    = subs[0]
-output_path = TMP / f"OUT_{IMAGE_INDEX}_{image_path.stem}.mp4"
+output_path = TMP / f"OUT_{image_path.stem}.mp4"
 
 print(f"Using image    : {image_path.name}")
 print(f"Using song     : {song_path.name}")
@@ -68,7 +64,7 @@ print(f"Using sub btn  : {sub_path.name}")
 print(f"Duration       : {DURATION}s ({DURATION//60}m {DURATION%60}s)")
 
 # ── Save image name for summary ───────────────────────────────────────────────
-(TMP / f"image_name_{IMAGE_INDEX}.txt").write_text(image_path.name)
+(TMP / "image_name.txt").write_text(image_path.name)
 
 # ── Try to get Drive file ID for image preview ────────────────────────────────
 try:
@@ -84,7 +80,7 @@ try:
             file_id = fid
             break
     if file_id:
-        (TMP / f"image_id_{IMAGE_INDEX}.txt").write_text(file_id)
+        (TMP / "image_id.txt").write_text(file_id)
         print(f">>> Drive file ID: {file_id}")
     else:
         print(">>> Could not extract Drive file ID — summary will show filename only")
