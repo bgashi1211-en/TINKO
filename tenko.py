@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 import gdown
 
-# ── Config ─────────────────────────────────────────────────────────────────────
 TMP = Path("/tmp/rain")
 TMP.mkdir(parents=True, exist_ok=True)
 
@@ -18,12 +17,9 @@ _F4 = "1n-tXny5mhhYmeWEnZl_xi2aXWHnSAqGw"  # sub
 AUDIO_BITRATE_K   = 128
 MIN_SIZE_BYTES    = 1_000_000_000
 MAX_SIZE_BYTES    = int(1.99 * 1024 ** 3)
-TARGET_SIZE_BYTES = random.randint(
-    int(1.05 * 1024 ** 3),
-    int(1.93 * 1024 ** 3),
-)
-DURATION        = random.randint(18000, 28800)
-VIDEO_BITRATE_K = int((TARGET_SIZE_BYTES * 8) / DURATION / 1000)
+TARGET_SIZE_BYTES = random.randint(int(1.05 * 1024 ** 3), int(1.93 * 1024 ** 3))
+DURATION          = random.randint(18000, 28800)
+VIDEO_BITRATE_K   = int((TARGET_SIZE_BYTES * 8) / DURATION / 1000)
 
 TARGET_SCENE_NAME = os.environ.get("TARGET_SCENE_NAME", "").strip()
 if not TARGET_SCENE_NAME:
@@ -33,22 +29,16 @@ IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 VIDEO_EXT = {".mp4", ".mov", ".webm"}
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
 def run_with_timeout(fn, timeout_sec=1800, label="operation"):
-    result = [None]
-    error  = [None]
+    result = [None]; error = [None]
     def worker():
-        try:
-            result[0] = fn()
-        except Exception as e:
-            error[0] = e
+        try: result[0] = fn()
+        except Exception as e: error[0] = e
     t = threading.Thread(target=worker, daemon=True)
-    t.start()
-    t.join(timeout_sec)
+    t.start(); t.join(timeout_sec)
     if t.is_alive():
         raise TimeoutError(f"[TIMEOUT] {label} exceeded {timeout_sec}s")
-    if error[0]:
-        raise error[0]
+    if error[0]: raise error[0]
     return result[0]
 
 
@@ -118,10 +108,8 @@ def check_disk(path, min_gb, label="disk check"):
     return free_gb
 
 
-# ── Disk check ─────────────────────────────────────────────────────────────────
 check_disk(TMP, 4.0, "before downloads")
 
-# ── Download everything ────────────────────────────────────────────────────────
 print("\n=== Downloading scene folder ===")
 scene_dir = TMP / "s1"
 dl_folder(_F1, scene_dir, label="s1", timeout=900)
@@ -138,7 +126,6 @@ print("\n=== Downloading sub overlay ===")
 sub_path = TMP / "s4.mp4"
 dl_file(_F4, sub_path, label="s4")
 
-# ── Locate scene file ──────────────────────────────────────────────────────────
 matches = list(scene_dir.rglob(TARGET_SCENE_NAME))
 if not matches:
     raise SystemExit(f"[FATAL] {TARGET_SCENE_NAME} not found in scene folder.")
@@ -150,27 +137,21 @@ if not is_image and not is_video:
     raise SystemExit(f"[FATAL] Unsupported file type: {scene_ext}")
 print(f"[OK] Scene: {scene_path.name} ({'image' if is_image else 'video'})")
 
-# ── Locate bird tracks ─────────────────────────────────────────────────────────
 bird1 = next(iter(birds_dir.rglob("1.mp3")), None)
 bird2 = next(iter(birds_dir.rglob("2.mp3")), None)
 if not bird1:
     raise SystemExit("[FATAL] 1.mp3 not found in birds folder.")
 if not bird2:
     raise SystemExit("[FATAL] 2.mp3 not found in birds folder.")
-print(f"[OK] Birds: {bird1.name} (80%) + {bird2.name} (52%)")
 
-# ── Locate breeze clip ─────────────────────────────────────────────────────────
 breeze_clips = sorted(p for p in breeze_dir.rglob("*") if p.suffix.lower() in VIDEO_EXT)
 if not breeze_clips:
     raise SystemExit("[FATAL] No video found in breeze folder.")
 breeze_path = breeze_clips[0]
-print(f"[OK] Breeze: {breeze_path.name} (20% vol, looped)")
 
-# ── Probe sub duration ─────────────────────────────────────────────────────────
 SUB_DURATION = probe_duration(sub_path)
 print(f"[INFO] Sub duration: {SUB_DURATION:.2f}s")
 
-# ── SUB overlay schedule ───────────────────────────────────────────────────────
 sub_appearances = []
 t = random.randint(300, 600)
 while t < DURATION - SUB_DURATION - 10:
@@ -185,36 +166,28 @@ while t < DURATION - SUB_DURATION - 10:
 
 print(f"[INFO] Sub appearances: {len(sub_appearances)}")
 
-# ── Build filter graph ─────────────────────────────────────────────────────────
-# FIX: chromakey sub once, then chain overlays with enable= per appearance.
-# No split=N needed — avoids the exit code 2 crash.
-
 filter_parts = []
-
 filter_parts.append(
     "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p[base]"
 )
 
 n = len(sub_appearances)
-
 if n == 0:
     filter_parts.append("[base]copy[outv]")
 else:
     _, _, _, base_scale, base_opacity, _, _ = sub_appearances[0]
-
     filter_parts.append(
         f"[1:v]chromakey=0x00FF00:0.25:0.1,format=yuva420p,"
         f"scale=iw*{base_scale}:-1,"
         f"colorchannelmixer=aa={base_opacity}[subprocessed]"
     )
-
     in_v = "base"
     for i, (s, e, pos, scale, opacity, ox, oy) in enumerate(sub_appearances):
-        out_v = f"v{i}" if i < n - 1 else "outv"
+        out_v  = f"v{i}" if i < n - 1 else "outv"
         enable = f"between(t\\,{s}\\,{e})"
-        x = str(ox) if pos == "bl" else f"W-w-{ox}"
-        y = f"H-h-{oy}"
+        x      = str(ox) if pos == "bl" else f"W-w-{ox}"
+        y      = f"H-h-{oy}"
         filter_parts.append(
             f"[{in_v}][subprocessed]overlay={x}:{y}:enable='{enable}'[{out_v}]"
         )
@@ -226,9 +199,7 @@ audio_filter = (
     "[4:a]volume=0.20[bz];"
     "[b1][b2][bz]amix=inputs=3:duration=longest:normalize=0[outa]"
 )
-
 full_filter = ";".join(filter_parts) + ";" + audio_filter
-
 output_path = TMP / f"OUT_{scene_path.stem}.mp4"
 
 print(f"""
@@ -245,7 +216,6 @@ print(f"""
 
 check_disk(TMP, 2.0, "after downloads")
 
-# ── FFmpeg ─────────────────────────────────────────────────────────────────────
 if is_image:
     scene_args = ["-loop", "1", "-framerate", "1", "-i", str(scene_path)]
 else:
@@ -281,7 +251,6 @@ cmd = [
 
 print("=== Starting FFmpeg ===")
 proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
 stopped_by_watcher = False
 
 def size_watcher():
@@ -290,9 +259,7 @@ def size_watcher():
         time.sleep(10)
         if output_path.exists():
             size = output_path.stat().st_size
-            mb   = size / (1024 ** 2)
-            gb   = size / (1024 ** 3)
-            print(f"[SIZE] {mb:.0f} MB  ({gb:.3f} GB)", flush=True)
+            print(f"[SIZE] {size / 1024**2:.0f} MB  ({size / 1024**3:.3f} GB)", flush=True)
             if size >= MAX_SIZE_BYTES:
                 print("[SIZE] Reached 1.99 GB cap — stopping FFmpeg.", flush=True)
                 stopped_by_watcher = True
@@ -312,8 +279,7 @@ for line in proc.stdout:
 proc.wait()
 watcher_thread.join(timeout=30)
 
-# ── Validate ───────────────────────────────────────────────────────────────────
-if not stopped_by_watcher and proc.returncode not in (0, 255):
+if not stopped_by_watcher and proc.returncode not in (0, -15, 255):
     raise SystemExit(f"[FATAL] FFmpeg exited with code {proc.returncode}")
 
 if not output_path.exists():
@@ -341,7 +307,6 @@ print(f"""
   Scene        : {scene_path.name}
 """)
 
-# ── GitHub Actions outputs ─────────────────────────────────────────────────────
 github_output = os.environ.get("GITHUB_OUTPUT")
 if github_output:
     with open(github_output, "a") as f:
