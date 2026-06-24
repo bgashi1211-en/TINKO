@@ -9,25 +9,24 @@ import gdown
 TMP = Path("/tmp/rain")
 TMP.mkdir(parents=True, exist_ok=True)
 
-_F1 = "1ZZw4iNgd8VOoIpko_qSQZK5nakH2_FEu"  # scene
-_F2 = "1giqnOS32SeedqFB93Xh872BrfOW-oIVH"  # birds
-_F3 = "1L67IkEkItNkkkB2k1QJctimw5zIBjU7W"  # breeze
-_F4 = "1n-tXny5mhhYmeWEnZl_xi2aXWHnSAqGw"  # sub
+SCENE_FOLDER  = "1ZZw4iNgd8VOoIpko_qSQZK5nakH2_FEu"
+BREEZE_FOLDER = "1L67IkEkItNkkkB2k1QJctimw5zIBjU7W"
+BIRDS_FOLDER  = "1giqnOS32SeedqFB93Xh872BrfOW-oIVH"
 
-AUDIO_BITRATE_K   = 128
 MIN_SIZE_BYTES    = 1_000_000_000
 MAX_SIZE_BYTES    = int(1.99 * 1024 ** 3)
 TARGET_SIZE_BYTES = random.randint(int(1.05 * 1024 ** 3), int(1.93 * 1024 ** 3))
 DURATION          = random.randint(18000, 28800)
+AUDIO_BITRATE_K   = 128
 VIDEO_BITRATE_K   = int((TARGET_SIZE_BYTES * 8) / DURATION / 1000)
-
-TARGET_SCENE_NAME = os.environ.get("TARGET_SCENE_NAME", "").strip()
-if not TARGET_SCENE_NAME:
-    raise SystemExit("[FATAL] TARGET_SCENE_NAME env var not set.")
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 VIDEO_EXT = {".mp4", ".mov", ".webm"}
 AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
+
+TARGET_SCENE_NAME = os.environ.get("TARGET_SCENE_NAME", "").strip()
+if not TARGET_SCENE_NAME:
+    raise SystemExit("[FATAL] TARGET_SCENE_NAME env var not set.")
 
 
 def run_with_timeout(fn, timeout_sec=1800, label="operation"):
@@ -43,36 +42,12 @@ def run_with_timeout(fn, timeout_sec=1800, label="operation"):
     return result[0]
 
 
-def dl_file(file_id, dest, label, retries=3, timeout=600):
-    dest = Path(dest)
-    if dest.exists() and dest.stat().st_size > 0:
-        print(f"[SKIP] {label} already exists ({dest.stat().st_size / 1e6:.1f} MB)")
-        return
-    for attempt in range(1, retries + 1):
-        try:
-            print(f"[DL] {label} attempt {attempt}/{retries}")
-            run_with_timeout(
-                lambda: gdown.download(id=file_id, output=str(dest), quiet=False),
-                timeout_sec=timeout, label=label,
-            )
-            if dest.exists() and dest.stat().st_size > 0:
-                print(f"[OK] {label} — {dest.stat().st_size / 1e6:.1f} MB")
-                return
-            dest.unlink(missing_ok=True)
-        except Exception as e:
-            print(f"[WARN] {label} attempt {attempt} failed: {e}")
-            dest.unlink(missing_ok=True)
-            if attempt < retries:
-                time.sleep(20 * attempt)
-    raise SystemExit(f"[FATAL] Could not download {label}.")
-
-
-def dl_folder(folder_id, dest_dir, label, retries=3, timeout=1800):
+def dl_folder(folder_id, dest_dir, label, retries=3, timeout=900):
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, retries + 1):
         try:
-            print(f"[DL FOLDER] {label} attempt {attempt}/{retries}")
+            print(f"[DL] {label} attempt {attempt}/{retries}")
             run_with_timeout(
                 lambda: gdown.download_folder(id=folder_id, output=str(dest_dir), quiet=False),
                 timeout_sec=timeout, label=label,
@@ -83,25 +58,11 @@ def dl_folder(folder_id, dest_dir, label, retries=3, timeout=1800):
             print(f"[WARN] {label} attempt {attempt} failed: {e}")
             if attempt < retries:
                 time.sleep(30 * attempt)
-    raise SystemExit(f"[FATAL] Could not download folder {label}.")
-
-
-def probe_duration(path):
-    try:
-        out = subprocess.check_output([
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(path),
-        ], stderr=subprocess.DEVNULL, text=True).strip()
-        return float(out)
-    except Exception as e:
-        print(f"[WARN] ffprobe failed on {path}: {e} — defaulting to 5s")
-        return 5.0
+    raise SystemExit(f"[FATAL] Could not download {label}.")
 
 
 def check_disk(path, min_gb, label="disk check"):
-    stat    = os.statvfs(str(path))
+    stat = os.statvfs(str(path))
     free_gb = (stat.f_bavail * stat.f_frsize) / (1024 ** 3)
     print(f"[DISK] {label}: {free_gb:.1f} GB free")
     if free_gb < min_gb:
@@ -109,25 +70,18 @@ def check_disk(path, min_gb, label="disk check"):
     return free_gb
 
 
+# ── Downloads ──────────────────────────────────────────────────────────────────
 check_disk(TMP, 4.0, "before downloads")
 
-print("\n=== Downloading scene folder ===")
-scene_dir = TMP / "scene"
-dl_folder(_F1, scene_dir, label="scene", timeout=900)
-
-print("\n=== Downloading birds folder ===")
-birds_dir = TMP / "birds"
-dl_folder(_F2, birds_dir, label="birds", timeout=900)
-
-print("\n=== Downloading breeze folder ===")
+scene_dir  = TMP / "scene"
 breeze_dir = TMP / "breeze"
-dl_folder(_F3, breeze_dir, label="breeze", timeout=900)
+birds_dir  = TMP / "birds"
 
-print("\n=== Downloading sub overlay ===")
-sub_path = TMP / "sub.mp4"
-dl_file(_F4, sub_path, label="sub")
+dl_folder(SCENE_FOLDER,  scene_dir,  "scene")
+dl_folder(BREEZE_FOLDER, breeze_dir, "breeze")
+dl_folder(BIRDS_FOLDER,  birds_dir,  "birds")
 
-# Locate scene file
+# ── Locate scene ───────────────────────────────────────────────────────────────
 matches = list(scene_dir.rglob(TARGET_SCENE_NAME))
 if not matches:
     raise SystemExit(f"[FATAL] {TARGET_SCENE_NAME} not found in scene folder.")
@@ -139,7 +93,7 @@ safe_path = scene_path.parent / safe_name
 if safe_name != scene_path.name:
     scene_path.rename(safe_path)
     scene_path = safe_path
-    print(f"[OK] Renamed to: {scene_path.name}")
+    print(f"[OK] Renamed scene to: {scene_path.name}")
 
 scene_ext = scene_path.suffix.lower()
 is_image  = scene_ext in IMAGE_EXT
@@ -148,104 +102,60 @@ if not is_image and not is_video:
     raise SystemExit(f"[FATAL] Unsupported file type: {scene_ext}")
 print(f"[OK] Scene: {scene_path.name} ({'image' if is_image else 'video'})")
 
-# Locate bird tracks
+# ── Locate breeze audio ────────────────────────────────────────────────────────
+breeze_files = sorted(p for p in breeze_dir.rglob("*") if p.suffix.lower() in AUDIO_EXT and p.is_file())
+if not breeze_files:
+    raise SystemExit("[FATAL] No audio found in breeze folder.")
+breeze_path = breeze_files[0]
+print(f"[OK] Breeze: {breeze_path.name} @ 22%")
+
+# ── Locate bird tracks ─────────────────────────────────────────────────────────
 bird1 = next(iter(birds_dir.rglob("1.mp3")), None)
 bird2 = next(iter(birds_dir.rglob("2.mp3")), None)
 if not bird1:
     raise SystemExit("[FATAL] 1.mp3 not found in birds folder.")
 if not bird2:
     raise SystemExit("[FATAL] 2.mp3 not found in birds folder.")
-print(f"[OK] Birds: {bird1.name} (80%) + {bird2.name} (52%)")
+print(f"[OK] Bird1: {bird1.name} @ 80%  |  Bird2: {bird2.name} @ 53%")
 
-# Locate breeze audio
-breeze_clips = sorted(p for p in breeze_dir.rglob("*") if p.suffix.lower() in AUDIO_EXT and p.is_file())
-if not breeze_clips:
-    raise SystemExit("[FATAL] No audio found in breeze folder.")
-breeze_path = breeze_clips[0]
-print(f"[OK] Breeze: {breeze_path.name} (20% vol, looped)")
+check_disk(TMP, 2.0, "after downloads")
 
-SUB_DURATION = probe_duration(sub_path)
-print(f"[INFO] Sub duration: {SUB_DURATION:.2f}s")
-
-# Sub overlay schedule
-sub_appearances = []
-t = random.randint(300, 600)
-while t < DURATION - SUB_DURATION - 10:
-    end_t    = round(t + SUB_DURATION, 2)
-    position = random.choice(["bl", "br"])
-    scale    = round(random.uniform(0.18, 0.26), 3)
-    opacity  = round(random.uniform(0.85, 1.0), 3)
-    offset_x = random.randint(20, 50)
-    offset_y = random.randint(20, 50)
-    sub_appearances.append((t, end_t, position, scale, opacity, offset_x, offset_y))
-    t += random.randint(300, 600)
-
-print(f"[INFO] Sub appearances: {len(sub_appearances)}")
-
-# Build filter graph
-filter_parts = []
-filter_parts.append(
-    "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
-    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p[base]"
-)
-
-n = len(sub_appearances)
-if n == 0:
-    filter_parts.append("[base]copy[outv]")
-else:
-    _, _, _, base_scale, base_opacity, _, _ = sub_appearances[0]
-    filter_parts.append(
-        f"[1:v]chromakey=0x00FF00:0.25:0.1,format=yuva420p,"
-        f"scale=iw*{base_scale}:-1,"
-        f"colorchannelmixer=aa={base_opacity}[subprocessed]"
-    )
-    in_v = "base"
-    for i, (s, e, pos, scale, opacity, ox, oy) in enumerate(sub_appearances):
-        out_v  = f"v{i}" if i < n - 1 else "outv"
-        enable = f"between(t\\,{s}\\,{e})"
-        x      = str(ox) if pos == "bl" else f"W-w-{ox}"
-        y      = f"H-h-{oy}"
-        filter_parts.append(
-            f"[{in_v}][subprocessed]overlay={x}:{y}:enable='{enable}'[{out_v}]"
-        )
-        in_v = out_v
-
-audio_filter = (
-    "[2:a]volume=0.80[b1];"
-    "[3:a]volume=0.52[b2];"
-    "[4:a]volume=0.20[bz];"
-    "[b1][b2][bz]amix=inputs=3:duration=longest:normalize=0[outa]"
-)
-full_filter = ";".join(filter_parts) + ";" + audio_filter
 output_path = TMP / f"OUT_{scene_path.stem}.mp4"
 
 print(f"""
 === RENDER JOB ===
-  SCENE        : {scene_path.name} ({'image looped' if is_image else 'video looped'})
-  BREEZE       : {breeze_path.name} (20% vol, looped)
-  BIRDS        : 1.mp3 @ 80% + 2.mp3 @ 52% (looped, mixed)
-  DURATION     : {DURATION}s  ({DURATION//3600}h {(DURATION%3600)//60}m)
+  SCENE        : {scene_path.name} ({'image' if is_image else 'video'})
+  BREEZE       : {breeze_path.name} @ 22%
+  BIRD1        : {bird1.name} @ 80%
+  BIRD2        : {bird2.name} @ 53%
+  DURATION     : {DURATION}s ({DURATION//3600}h {(DURATION%3600)//60}m)
   TARGET SIZE  : {TARGET_SIZE_BYTES / 1e9:.2f} GB
-  HARD CAP     : {MAX_SIZE_BYTES / 1e9:.2f} GB
   VIDEO BITRATE: {VIDEO_BITRATE_K}k
-  SUB          : {len(sub_appearances)} appearances
 """)
 
-check_disk(TMP, 2.0, "after downloads")
-
+# ── FFmpeg inputs ──────────────────────────────────────────────────────────────
 if is_image:
     scene_args = ["-loop", "1", "-framerate", "1", "-i", str(scene_path)]
 else:
     scene_args = ["-stream_loop", "-1", "-i", str(scene_path)]
 
+# input 0 = scene, 1 = bird1, 2 = bird2, 3 = breeze
+filter_complex = (
+    "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
+    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p[outv];"
+    "[1:a]volume=0.80[b1];"
+    "[2:a]volume=0.53[b2];"
+    "[3:a]volume=0.22[bz];"
+    "[b1][b2][bz]amix=inputs=3:duration=longest:normalize=0[outa]"
+)
+
 cmd = [
     "ffmpeg", "-y", "-hide_banner", "-fflags", "+genpts",
     *scene_args,
-    "-stream_loop", "-1", "-i", str(sub_path),
     "-stream_loop", "-1", "-i", str(bird1),
     "-stream_loop", "-1", "-i", str(bird2),
     "-stream_loop", "-1", "-i", str(breeze_path),
-    "-filter_complex", full_filter,
+    "-filter_complex", filter_complex,
     "-map", "[outv]",
     "-map", "[outa]",
     "-t", str(DURATION),
@@ -270,15 +180,16 @@ print("=== Starting FFmpeg ===")
 proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 stopped_by_watcher = False
 
+
 def size_watcher():
     global stopped_by_watcher
     while proc.poll() is None:
         time.sleep(10)
         if output_path.exists():
             size = output_path.stat().st_size
-            print(f"[SIZE] {size / 1024**2:.0f} MB  ({size / 1024**3:.3f} GB)", flush=True)
+            print(f"[SIZE] {size/1024**2:.0f} MB  ({size/1024**3:.3f} GB)", flush=True)
             if size >= MAX_SIZE_BYTES:
-                print("[SIZE] Reached 1.99 GB cap — stopping FFmpeg.", flush=True)
+                print("[SIZE] Reached cap — stopping FFmpeg.", flush=True)
                 stopped_by_watcher = True
                 proc.terminate()
                 try:
@@ -286,6 +197,7 @@ def size_watcher():
                 except subprocess.TimeoutExpired:
                     proc.kill()
                 break
+
 
 watcher_thread = threading.Thread(target=size_watcher, daemon=True)
 watcher_thread.start()
@@ -299,29 +211,23 @@ watcher_thread.join(timeout=30)
 if not stopped_by_watcher and proc.returncode not in (0, -15, 255):
     raise SystemExit(f"[FATAL] FFmpeg exited with code {proc.returncode}")
 
-if not output_path.exists():
-    raise SystemExit("[FATAL] Output file does not exist.")
+if not output_path.exists() or output_path.stat().st_size == 0:
+    raise SystemExit("[FATAL] Output file missing or empty.")
 
-final_size = output_path.stat().st_size
-if final_size == 0:
-    raise SystemExit("[FATAL] Output file is 0 bytes.")
-
+final_size    = output_path.stat().st_size
 final_size_mb = final_size / (1024 ** 2)
 final_size_gb = final_size / (1024 ** 3)
-stop_reason   = "size cap (1.99 GB)" if stopped_by_watcher else "duration reached"
+stop_reason   = "size cap" if stopped_by_watcher else "duration reached"
 
 if final_size < MIN_SIZE_BYTES:
     raise SystemExit(f"[FATAL] Output only {final_size_gb:.3f} GB — below 1 GB minimum.")
 
 print(f"""
 === RENDER COMPLETE ===
-  Output       : {output_path}
-  Stop reason  : {stop_reason}
-  Final size   : {final_size_mb:.1f} MB  ({final_size_gb:.3f} GB)
-  Size OK      : {'YES' if MIN_SIZE_BYTES <= final_size <= MAX_SIZE_BYTES else 'OUT OF RANGE'}
-  Bitrate used : {VIDEO_BITRATE_K}k
-  Sub overlays : {len(sub_appearances)}
-  Scene        : {scene_path.name}
+  Output    : {output_path}
+  Stop      : {stop_reason}
+  Size      : {final_size_mb:.1f} MB ({final_size_gb:.3f} GB)
+  OK        : {'YES' if MIN_SIZE_BYTES <= final_size <= MAX_SIZE_BYTES else 'OUT OF RANGE'}
 """)
 
 github_output = os.environ.get("GITHUB_OUTPUT")
@@ -331,5 +237,4 @@ if github_output:
         f.write(f"scene_name={scene_path.name}\n")
         f.write(f"duration_seconds={DURATION}\n")
         f.write(f"final_size_mb={final_size_mb:.1f}\n")
-        f.write(f"video_bitrate_k={VIDEO_BITRATE_K}\n")
         f.write(f"stop_reason={stop_reason}\n")
