@@ -171,7 +171,6 @@ SUB_DURATION = probe_duration(sub_path)
 print(f"[INFO] Sub duration: {SUB_DURATION:.2f}s")
 
 # ── SUB overlay schedule ───────────────────────────────────────────────────────
-# Every 5-10 min, unique scale/opacity/position per appearance
 sub_appearances = []
 t = random.randint(300, 600)
 while t < DURATION - SUB_DURATION - 10:
@@ -187,38 +186,40 @@ while t < DURATION - SUB_DURATION - 10:
 print(f"[INFO] Sub appearances: {len(sub_appearances)}")
 
 # ── Build filter graph ─────────────────────────────────────────────────────────
-filter_parts = [
+# FIX: chromakey sub once, then chain overlays with enable= per appearance.
+# No split=N needed — avoids the exit code 2 crash.
+
+filter_parts = []
+
+filter_parts.append(
     "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p[base]"
-]
+)
 
 n = len(sub_appearances)
 
 if n == 0:
     filter_parts.append("[base]copy[outv]")
 else:
-    split_outs = "".join(f"[sc{i}]" for i in range(n))
-    filter_parts.append(f"[1:v]split={n}{split_outs}")
+    _, _, _, base_scale, base_opacity, _, _ = sub_appearances[0]
 
+    filter_parts.append(
+        f"[1:v]chromakey=0x00FF00:0.25:0.1,format=yuva420p,"
+        f"scale=iw*{base_scale}:-1,"
+        f"colorchannelmixer=aa={base_opacity}[subprocessed]"
+    )
+
+    in_v = "base"
     for i, (s, e, pos, scale, opacity, ox, oy) in enumerate(sub_appearances):
-        in_label  = "base" if i == 0 else f"v{i-1}"
-        out_label = f"v{i}" if i < n - 1 else "outv"
-        enable    = f"between(t,{s},{e})"
-
-        filter_parts.append(
-            f"[sc{i}]chromakey=0x00FF00:0.25:0.1,"
-            f"scale=iw*{scale}:-1,"
-            f"colorchannelmixer=aa={opacity}[sk{i}]"
-        )
-
-        x = ox if pos == "bl" else f"W-w-{ox}"
+        out_v = f"v{i}" if i < n - 1 else "outv"
+        enable = f"between(t\\,{s}\\,{e})"
+        x = str(ox) if pos == "bl" else f"W-w-{ox}"
         y = f"H-h-{oy}"
-
         filter_parts.append(
-            f"[{in_label}][sk{i}]overlay={x}:{y}:enable='{enable}'[{out_label}]"
+            f"[{in_v}][subprocessed]overlay={x}:{y}:enable='{enable}'[{out_v}]"
         )
+        in_v = out_v
 
-# Audio mix
 audio_filter = (
     "[2:a]volume=0.80[b1];"
     "[3:a]volume=0.52[b2];"
@@ -239,7 +240,7 @@ print(f"""
   TARGET SIZE  : {TARGET_SIZE_BYTES / 1e9:.2f} GB
   HARD CAP     : {MAX_SIZE_BYTES / 1e9:.2f} GB
   VIDEO BITRATE: {VIDEO_BITRATE_K}k
-  SUB          : {len(sub_appearances)} appearances, unique each time
+  SUB          : {len(sub_appearances)} appearances
 """)
 
 check_disk(TMP, 2.0, "after downloads")
@@ -252,11 +253,11 @@ else:
 
 cmd = [
     "ffmpeg", "-y", "-hide_banner", "-fflags", "+genpts",
-    *scene_args,                                            # [0] scene
-    "-stream_loop", "-1", "-i", str(sub_path),             # [1] sub
-    "-stream_loop", "-1", "-i", str(bird1),                # [2] bird1
-    "-stream_loop", "-1", "-i", str(bird2),                # [3] bird2
-    "-stream_loop", "-1", "-i", str(breeze_path),          # [4] breeze
+    *scene_args,
+    "-stream_loop", "-1", "-i", str(sub_path),
+    "-stream_loop", "-1", "-i", str(bird1),
+    "-stream_loop", "-1", "-i", str(bird2),
+    "-stream_loop", "-1", "-i", str(breeze_path),
     "-filter_complex", full_filter,
     "-map", "[outv]",
     "-map", "[outa]",
@@ -334,9 +335,9 @@ print(f"""
   Output       : {output_path}
   Stop reason  : {stop_reason}
   Final size   : {final_size_mb:.1f} MB  ({final_size_gb:.3f} GB)
-  Size OK      : {'✅ YES' if MIN_SIZE_BYTES <= final_size <= MAX_SIZE_BYTES else '❌ OUT OF RANGE'}
+  Size OK      : {'YES' if MIN_SIZE_BYTES <= final_size <= MAX_SIZE_BYTES else 'OUT OF RANGE'}
   Bitrate used : {VIDEO_BITRATE_K}k
-  Sub overlays : {len(sub_appearances)} (unique scale/pos/opacity each)
+  Sub overlays : {len(sub_appearances)}
   Scene        : {scene_path.name}
 """)
 
