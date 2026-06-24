@@ -27,6 +27,7 @@ if not TARGET_SCENE_NAME:
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 VIDEO_EXT = {".mp4", ".mov", ".webm"}
+AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
 
 
 def run_with_timeout(fn, timeout_sec=1800, label="operation"):
@@ -111,47 +112,62 @@ def check_disk(path, min_gb, label="disk check"):
 check_disk(TMP, 4.0, "before downloads")
 
 print("\n=== Downloading scene folder ===")
-scene_dir = TMP / "s1"
-dl_folder(_F1, scene_dir, label="s1", timeout=900)
+scene_dir = TMP / "scene"
+dl_folder(_F1, scene_dir, label="scene", timeout=900)
 
 print("\n=== Downloading birds folder ===")
-birds_dir = TMP / "s2"
-dl_folder(_F2, birds_dir, label="s2", timeout=900)
+birds_dir = TMP / "birds"
+dl_folder(_F2, birds_dir, label="birds", timeout=900)
 
 print("\n=== Downloading breeze folder ===")
-breeze_dir = TMP / "s3"
-dl_folder(_F3, breeze_dir, label="s3", timeout=900)
+breeze_dir = TMP / "breeze"
+dl_folder(_F3, breeze_dir, label="breeze", timeout=900)
 
 print("\n=== Downloading sub overlay ===")
-sub_path = TMP / "s4.mp4"
-dl_file(_F4, sub_path, label="s4")
+sub_path = TMP / "sub.mp4"
+dl_file(_F4, sub_path, label="sub")
 
+# Locate scene file
 matches = list(scene_dir.rglob(TARGET_SCENE_NAME))
 if not matches:
     raise SystemExit(f"[FATAL] {TARGET_SCENE_NAME} not found in scene folder.")
 scene_path = matches[0]
-scene_ext  = scene_path.suffix.lower()
-is_image   = scene_ext in IMAGE_EXT
-is_video   = scene_ext in VIDEO_EXT
+
+# Sanitize filename
+safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in scene_path.name)
+safe_path = scene_path.parent / safe_name
+if safe_name != scene_path.name:
+    scene_path.rename(safe_path)
+    scene_path = safe_path
+    print(f"[OK] Renamed to: {scene_path.name}")
+
+scene_ext = scene_path.suffix.lower()
+is_image  = scene_ext in IMAGE_EXT
+is_video  = scene_ext in VIDEO_EXT
 if not is_image and not is_video:
     raise SystemExit(f"[FATAL] Unsupported file type: {scene_ext}")
 print(f"[OK] Scene: {scene_path.name} ({'image' if is_image else 'video'})")
 
+# Locate bird tracks
 bird1 = next(iter(birds_dir.rglob("1.mp3")), None)
 bird2 = next(iter(birds_dir.rglob("2.mp3")), None)
 if not bird1:
     raise SystemExit("[FATAL] 1.mp3 not found in birds folder.")
 if not bird2:
     raise SystemExit("[FATAL] 2.mp3 not found in birds folder.")
+print(f"[OK] Birds: {bird1.name} (80%) + {bird2.name} (52%)")
 
-breeze_clips = sorted(p for p in breeze_dir.rglob("*") if p.suffix.lower() in VIDEO_EXT)
+# Locate breeze audio
+breeze_clips = sorted(p for p in breeze_dir.rglob("*") if p.suffix.lower() in AUDIO_EXT and p.is_file())
 if not breeze_clips:
-    raise SystemExit("[FATAL] No video found in breeze folder.")
+    raise SystemExit("[FATAL] No audio found in breeze folder.")
 breeze_path = breeze_clips[0]
+print(f"[OK] Breeze: {breeze_path.name} (20% vol, looped)")
 
 SUB_DURATION = probe_duration(sub_path)
 print(f"[INFO] Sub duration: {SUB_DURATION:.2f}s")
 
+# Sub overlay schedule
 sub_appearances = []
 t = random.randint(300, 600)
 while t < DURATION - SUB_DURATION - 10:
@@ -166,6 +182,7 @@ while t < DURATION - SUB_DURATION - 10:
 
 print(f"[INFO] Sub appearances: {len(sub_appearances)}")
 
+# Build filter graph
 filter_parts = []
 filter_parts.append(
     "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
